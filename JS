@@ -1,0 +1,208 @@
+window.onload = function () {
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  const warmthDisplay = document.getElementById("warmthLevel");
+  const hydrationDisplay = document.getElementById("hydrationLevel");
+  const mouseCountDisplay = document.getElementById("mouseCount");
+  const squeakSound = document.getElementById("squeakSound");
+
+  const gridSize = 20;
+  const cols = canvas.width / gridSize;
+  const rows = canvas.height / gridSize;
+
+  let snake = {
+    body: [{ x: 5, y: 5 }],
+    dx: 1,
+    dy: 0,
+    length: 8,
+    warmth: 100,
+    hydration: 100,
+    warmingUp: false,
+    drinking: false
+  };
+
+  let mice = [];
+  let frameCount = 0;
+  let home = { x: 2, y: 2 };
+  let water = { x: cols - 3, y: rows - 3 };
+
+  function drawGlow(x, y, color) {
+    ctx.beginPath();
+    ctx.arc(x * gridSize + gridSize / 2, y * gridSize + gridSize / 2, gridSize * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function drawRect(x, y, color) {
+    if ((snake.warmingUp && x === home.x && y === home.y) ||
+        (snake.drinking && x === water.x && y === water.y)) {
+      const flicker = Math.random() > 0.5 ? "rgba(255,255,255,0.6)" : color;
+      ctx.fillStyle = flicker;
+    } else {
+      ctx.fillStyle = color;
+    }
+    ctx.fillRect(x * gridSize, y * gridSize, gridSize - 2, gridSize - 2);
+  }
+
+  function updateSnake() {
+    let head = snake.body[0];
+    const allInHome = snake.body.every(segment => segment.x === home.x && segment.y === home.y);
+    const allAtWater = snake.body.every(segment => segment.x === water.x && segment.y === water.y);
+
+    if (!snake.warmingUp && snake.warmth < 30) snake.warmingUp = true;
+    if (!snake.drinking && snake.hydration < 30) snake.drinking = true;
+
+    if (snake.warmingUp && allInHome) {
+      snake.dx = 0;
+      snake.dy = 0;
+      snake.warmth = Math.min(100, snake.warmth + 2);
+      if (snake.warmth >= 100) snake.warmingUp = false;
+      updateStatus();
+      return;
+    }
+
+    if (snake.drinking && allAtWater) {
+      snake.dx = 0;
+      snake.dy = 0;
+      snake.hydration = Math.min(100, snake.hydration + 2);
+      if (snake.hydration >= 100) snake.drinking = false;
+      updateStatus();
+      return;
+    }
+
+    let target = mice[0];
+
+    if (snake.warmingUp && !allInHome) {
+      moveToward(home);
+    } else if (snake.drinking && !allAtWater) {
+      moveToward(water);
+    } else if (target) {
+      moveToward(target);
+    } else {
+      if (Math.random() < 0.05) {
+        const dirs = [
+          { dx: 1, dy: 0 },
+          { dx: -1, dy: 0 },
+          { dx: 0, dy: 1 },
+          { dx: 0, dy: -1 },
+        ];
+        const dir = dirs[Math.floor(Math.random() * dirs.length)];
+        snake.dx = dir.dx;
+        snake.dy = dir.dy;
+      }
+    }
+
+    let newX = head.x + snake.dx;
+    let newY = head.y + snake.dy;
+
+    if (newX >= 0 && newX < cols && newY >= 0 && newY < rows) {
+      snake.body.unshift({ x: newX, y: newY });
+      if (snake.body.length > snake.length) {
+        snake.body.pop();
+      }
+    }
+
+    // Decrease warmth and hydration over time
+    if (head.x === home.x && head.y === home.y) {
+      snake.warmth = Math.min(100, snake.warmth + 2);
+    } else {
+      snake.warmth = Math.max(0, snake.warmth - 0.5);
+    }
+
+    if (head.x === water.x && head.y === water.y) {
+      snake.hydration = Math.min(100, snake.hydration + 2);
+    } else {
+      snake.hydration = Math.max(0, snake.hydration - 0.3);
+    }
+
+    updateStatus();
+  }
+
+  function moveToward(target) {
+    let head = snake.body[0];
+    let dx = target.x - head.x;
+    let dy = target.y - head.y;
+    snake.dx = dx === 0 ? 0 : dx / Math.abs(dx);
+    snake.dy = dy === 0 ? 0 : dy / Math.abs(dy);
+  }
+
+  function updateStatus() {
+    let warmthIcon = snake.warmingUp ? "🔥" : (snake.warmth < 30 ? "🧊" : "🐍");
+    let hydrationIcon = snake.drinking ? "🥤" : (snake.hydration < 30 ? "💦" : "💧");
+
+    warmthDisplay.textContent = `${Math.floor(snake.warmth)} ${warmthIcon}`;
+    hydrationDisplay.textContent = `${Math.floor(snake.hydration)} ${hydrationIcon}`;
+  }
+
+  function updateMice() {
+    mice = mice.filter(mouse => {
+      let head = snake.body[0];
+      let dx = mouse.x - head.x;
+      let dy = mouse.y - head.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < 1) {
+      //  squeakSound.play();
+        snake.drinking = true; // Trigger drinking after eating
+        return false;
+      }
+
+      let speed = dist < 5 ? 2 : 1;
+      let moveX, moveY;
+
+      if (dist < 3) {
+        moveX = Math.floor(Math.random() * 3) - 1;
+        moveY = Math.floor(Math.random() * 3) - 1;
+      } else {
+        moveX = dx === 0 ? 0 : dx / Math.abs(dx);
+        moveY = dy === 0 ? 0 : dy / Math.abs(dy);
+      }
+
+      mouse.x += moveX * speed;
+      mouse.y += moveY * speed;
+
+      mouse.x = Math.max(0, Math.min(cols - 1, Math.round(mouse.x)));
+      mouse.y = Math.max(0, Math.min(rows - 1, Math.round(mouse.y)));
+
+      return true;
+    });
+
+    mouseCountDisplay.textContent = mice.length;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGlow(home.x, home.y, "rgba(255,165,0,0.2)");
+    drawGlow(water.x, water.y, "rgba(0,255,255,0.2)");
+    drawRect(home.x, home.y, "orange");
+    drawRect(water.x, water.y, "blue");
+    snake.body.forEach((segment, i) => {
+      drawRect(segment.x, segment.y, i === 0 ? "lime" : "green");
+    });
+    mice.forEach(mouse => drawRect(mouse.x, mouse.y, "red"));
+  }
+
+  function gameLoop() {
+    frameCount++;
+    if (frameCount % 10 === 0) {
+      updateSnake();
+      updateMice();
+      draw();
+    }
+    requestAnimationFrame(gameLoop);
+  }
+
+  canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / gridSize);
+    const y = Math.floor((e.clientY - rect.top) / gridSize);
+
+    const overlap = mice.some(mouse => mouse.x === x && mouse.y === y);
+    if (!overlap) {
+      mice.push({ x, y });
+      mouseCountDisplay.textContent = mice.length;
+    }
+  });
+
+  gameLoop();
+};
